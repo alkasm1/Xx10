@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎵 ALM AudioImage v2.3 – محول صوت إلى صورة</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Cairo', sans-serif;
+      background: linear-gradient(145deg, #f4f9f8 0%, #e2f0ed 100%);
+      min-height: 100vh;
+      padding: 24px 16px 40px;
+      color: #1a2e2a;
+    }
+    .main-card {
+      max-width: 880px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(12px);
+      border-radius: 36px;
+      box-shadow: 0 20px 40px -8px rgba(11, 163, 127, 0.18);
+      padding: 28px 30px 36px;
+      border: 1px solid rgba(11, 163, 127, 0.2);
+    }
+    h1 { font-size: 2rem; font-weight: 700; color: #0b7a5e; border-bottom: 3px solid #0BA37F; padding-bottom: 16px; }
+    h2 { font-size: 1.3rem; font-weight: 600; margin: 28px 0 12px; color: #0d5c4a; }
+    .warning-box {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 20px;
+      padding: 16px 20px;
+      margin: 16px 0;
+      color: #856404;
+      font-weight: 500;
+    }
+    .key-section { background: #e9f4f0; padding: 18px 20px; border-radius: 24px; margin: 20px 0; }
+    .key-input-wrapper { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .key-input-wrapper input {
+      flex: 1 1 260px; padding: 14px 18px; border: 2px solid #bcd9d1; border-radius: 48px;
+      font-size: 1.2rem; font-family: monospace; text-transform: uppercase;
+    }
+    .btn {
+      background: #0BA37F; color: white; border: none; padding: 14px 24px; border-radius: 60px;
+      font-size: 1rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center;
+      gap: 10px; box-shadow: 0 8px 16px -6px rgba(11, 163, 127, 0.3); transition: all 0.2s;
+    }
+    .btn-secondary { background: #2c4c44; }
+    .btn-outline { background: transparent; color: #0b5e4a; border: 2px solid #0BA37F; }
+    .btn-copy { background: #5f6c7a; }
+    .drop-zone {
+      border: 2px dashed #0BA37F; border-radius: 28px; padding: 28px; text-align: center;
+      background: #f6fbfa; margin: 20px 0; cursor: pointer;
+    }
+    audio { width: 100%; margin: 16px 0; border-radius: 40px; }
+    .canvas-container { background: #ffffffd9; border-radius: 28px; padding: 24px; margin: 30px 0; text-align: center; }
+    canvas { max-width: 100%; border-radius: 18px; image-rendering: crisp-edges; }
+    .toast-msg { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a3a32; color: white; padding: 12px 32px; border-radius: 80px; opacity: 0; transition: 0.2s; z-index: 999; pointer-events: none; }
+    .code-block { background: #1e2e2a; color: #b3ffda; padding: 16px; border-radius: 24px; font-family: monospace; word-break: break-all; margin: 12px 0; display: none; }
+  </style>
+</head>
+<body>
+<div class="main-card">
+  <h1>🎧 ALM AudioImage <span style="font-size:1rem; background:#0BA37F; color:white; padding:4px 12px; border-radius:40px;">v2.3</span></h1>
+  
+  <div class="warning-box">
+    ⚠️ تنبيه مهم: عند مشاركة الصورة عبر واتساب أو تطبيقات التواصل، يجب إرسالها <strong>كـ "مستند" (Document)</strong> وليس كصورة عادية، وإلا سيتم ضغطها وتلف البيانات.<br>
+    أو استخدم خيار "نسخ النص المشفر" كبديل آمن.
+  </div>
+
+  <div id="liveToast" class="toast-msg">✨ جاهز</div>
+
+  <div class="key-section">
+    <div class="key-input-wrapper">
+      <label>🔐 مفتاح 32‑bit (8 خانات Hex):</label>
+      <input id="userKey" type="text" value="A1B2C3D4" placeholder="A1B2C3D4" maxlength="8" autocomplete="off">
+    </div>
+    <div id="keyPreview" style="margin-top:8px; opacity:0.8;"></div>
+  </div>
+
+  <h2>🎙️ 1. مصدر الصوت</h2>
+  <div style="display:flex; gap:12px; flex-wrap:wrap;">
+    <button class="btn" id="startRecordBtn">🎤 بدء التسجيل</button>
+    <button class="btn btn-secondary" id="stopRecordBtn" disabled>⏹ إيقاف</button>
+  </div>
+  <div id="recordingStatus" style="display:none;">⏺ جاري التسجيل... <span id="timerDisplay">00:00</span></div>
+  <audio id="recordedAudio" controls style="display:none;"></audio>
+
+  <div class="drop-zone" id="audioDropZone">
+    <div style="font-size:2.4rem;">📂</div>
+    <div>اسحب ملف صوتي هنا أو انقر للاختيار</div>
+    <div id="audioFileInfo"></div>
+    <input type="file" id="audioInput" accept="audio/*" style="display:none;">
+  </div>
+
+  <h2>🖼️ 2. تحويل إلى صورة (PNG)</h2>
+  <button class="btn" id="encodeBtn">🎨 تحويل الصوت ➔ صورة</button>
+  
+  <div class="canvas-container" id="canvasWrapper" style="display:none;">
+    <canvas id="audioCanvas"></canvas>
+    <div style="display:flex; gap:12px; margin-top:20px; flex-wrap:wrap; justify-content:center;">
+      <button class="btn btn-outline" id="saveImageBtn">💾 حفظ PNG</button>
+      <button class="btn btn-copy" id="copyBase64Btn">📋 نسخ النص المشفر</button>
+    </div>
+    <div id="imageSizeInfo"></div>
+  </div>
+
+  <!-- خيار استيراد Base64 يدوي -->
+  <div style="margin-top:20px;">
+    <details>
+      <summary style="cursor:pointer; color:#0b5e4a;">📎 أو الصق النص المشفر (Base64) للاستعادة</summary>
+      <textarea id="base64PasteArea" placeholder="الصق النص المشفر هنا..." rows="3" style="width:100%; padding:12px; border-radius:20px; border:1px solid #ccc; margin-top:12px;"></textarea>
+      <button class="btn btn-secondary" id="decodeFromBase64Btn" style="margin-top:8px;">استعادة من النص</button>
+    </details>
+  </div>
+
+  <hr>
+
+  <h2>🔊 3. استعادة الصوت من صورة</h2>
+  <div class="drop-zone" id="imageDropZone">
+    <div style="font-size:2.4rem;">🖼️</div>
+    <div>اسحب صورة PNG أو انقر للاختيار</div>
+    <div id="imageFileInfo"></div>
+    <input type="file" id="imageInput" accept="image/png" style="display:none;">
+  </div>
+  <button class="btn btn-secondary" id="decodeBtn">🔓 فك التشفير من الصورة</button>
+  <audio id="restoredAudio" controls style="margin-top:18px;"></audio>
+</div>
+
+<script>
+  (function(){
+    "use strict";
+
+    // عناصر DOM
+    const userKeyInput = document.getElementById('userKey');
+    const keyPreview = document.getElementById('keyPreview');
+    const audioInput = document.getElementById('audioInput');
+    const imageInput = document.getElementById('imageInput');
+    const recordedAudio = document.getElementById('recordedAudio');
+    const restoredAudio = document.getElementById('restoredAudio');
+    const canvas = document.getElementById('audioCanvas');
+    const canvasWrapper = document.getElementById('canvasWrapper');
+    const startBtn = document.getElementById('startRecordBtn');
+    const stopBtn = document.getElementById('stopRecordBtn');
+    const recordingStatusDiv = document.getElementById('recordingStatus');
+    const timerSpan = document.getElementById('timerDisplay');
+    const audioFileInfo = document.getElementById('audioFileInfo');
+    const imageFileInfo = document.getElementById('imageFileInfo');
+    const imageSizeInfo = document.getElementById('imageSizeInfo');
+    const toast = document.getElementById('liveToast');
+    const base64PasteArea = document.getElementById('base64PasteArea');
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let recordedBlob = null;
+    let recordingStartTime = 0;
+    let timerInterval = null;
+    let audioMimeType = 'audio/webm';
+    let lastEncodedBase64 = ''; // تخزين النص المشفر للحفظ/النسخ
+
+    function showToast(msg, isGood = true) {
+      toast.style.opacity = '1';
+      toast.textContent = msg;
+      toast.style.background = isGood ? '#0b7a5e' : '#b13e3e';
+      setTimeout(() => toast.style.opacity = '0', 3000);
+    }
+
+    function updateKeyPreview() {
+      const keyVal = parseKey32(userKeyInput.value);
+      keyPreview.textContent = `القيمة: 0x${keyVal.toString(16).toUpperCase().padStart(8, '0')}`;
+    }
+    userKeyInput.addEventListener('input', updateKeyPreview);
+    updateKeyPreview();
+
+    // ---------- Base64 آمن ----------
+    function uint8ArrayToBase64(bytes) {
+      const chunkSize = 0x8000;
+      const chunks = [];
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        let binary = '';
+        for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j]);
+        chunks.push(binary);
+      }
+      return btoa(chunks.join(''));
+    }
+
+    function base64ToUint8Array(base64) {
+      const binary = atob(base64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    }
+
+    // ---------- تسجيل ----------
+    async function startRecording() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          recordedBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+          audioMimeType = recordedBlob.type;
+          recordedAudio.src = URL.createObjectURL(recordedBlob);
+          recordedAudio.style.display = 'block';
+          updateAudioFileInfo(new File([recordedBlob], "recording", {type: recordedBlob.type}));
+          clearInterval(timerInterval);
+          recordingStatusDiv.style.display = 'none';
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+          showToast(`✅ تم التسجيل (${formatFileSize(recordedBlob.size)})`);
+        };
+        mediaRecorder.start();
+        recordingStartTime = Date.now();
+        timerInterval = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+          timerSpan.textContent = `${String(Math.floor(elapsed/60)).padStart(2,'0')}:${String(elapsed%60).padStart(2,'0')}`;
+        }, 200);
+        recordingStatusDiv.style.display = 'inline-block';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        showToast('🎤 بدأ التسجيل...');
+      } catch (e) {
+        showToast('❌ لا يمكن الوصول للميكروفون', false);
+      }
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+      }
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(2) + ' KB';
+      return (bytes / 1048576).toFixed(2) + ' MB';
+    }
+
+    function updateAudioFileInfo(file) {
+      audioFileInfo.textContent = `🎵 ${file.name} (${formatFileSize(file.size)})`;
+      audioMimeType = file.type || 'audio/webm';
+    }
+    function updateImageFileInfo(file) {
+      imageFileInfo.textContent = `🖼️ ${file.name} (${formatFileSize(file.size)})`;
+    }
+
+    // إعداد السحب
+    function setupDropZone(zone, inputEl, infoEl, type) {
+      zone.addEventListener('click', () => inputEl.click());
+      zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+      zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files.length) {
+          inputEl.files = files;
+          if (type === 'audio') updateAudioFileInfo(files[0]);
+          else updateImageFileInfo(files[0]);
+        }
+      });
+      inputEl.addEventListener('change', () => {
+        if (inputEl.files.length) {
+          if (type === 'audio') updateAudioFileInfo(inputEl.files[0]);
+          else updateImageFileInfo(inputEl.files[0]);
+        }
+      });
+    }
+    setupDropZone(document.getElementById('audioDropZone'), audioInput, audioFileInfo, 'audio');
+    setupDropZone(document.getElementById('imageDropZone'), imageInput, imageFileInfo, 'image');
+
+    // ---------- التشفير والمفتاح ----------
+    function parseKey32(hex) {
+      hex = hex.replace(/[^0-9A-Fa-f]/g, '');
+      if (hex.length !== 8) return 0xA1B2C3D4;
+      return parseInt(hex, 16) >>> 0;
+    }
+
+    function xorBytesWithKey(bytes, key32) {
+      const k = [(key32>>>24)&0xFF, (key32>>>16)&0xFF, (key32>>>8)&0xFF, key32&0xFF];
+      const res = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) res[i] = bytes[i] ^ k[i % 4];
+      return res;
+    }
+
+    function crc32(bytes) {
+      let crc = ~0;
+      for (let i = 0; i < bytes.length; i++) {
+        crc ^= bytes[i];
+        for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
+      }
+      return (~crc) >>> 0;
+    }
+
+    function intToBytes32(n) {
+      return [(n>>>24)&0xFF, (n>>>16)&0xFF, (n>>>8)&0xFF, n&0xFF];
+    }
+    function bytesToInt32(b0,b1,b2,b3) {
+      return ((b0<<24)>>>0) | (b1<<16) | (b2<<8) | b3;
+    }
+
+    // ---------- تحويل الصوت إلى صورة (مع حفظ Base64) ----------
+    async function encodeAudioToImage() {
+      const key32 = parseKey32(userKeyInput.value);
+      let audioBlob = null;
+      if (audioInput.files[0]) audioBlob = audioInput.files[0];
+      else if (recordedBlob) audioBlob = recordedBlob;
+      else { showToast('⚠️ الرجاء تسجيل أو رفع ملف صوتي', false); return; }
+
+      showToast('⏳ جاري التشفير...');
+      try {
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBytes = new Uint8Array(arrayBuffer);
+        const encrypted = xorBytesWithKey(audioBytes, key32);
+        const base64 = uint8ArrayToBase64(encrypted);
+        lastEncodedBase64 = base64; // تخزين للنسخ
+
+        // بناء payload
+        const mimeBytes = new TextEncoder().encode(audioMimeType);
+        const mimeLenBytes = new Uint8Array(intToBytes32(mimeBytes.length));
+        const base64Bytes = new TextEncoder().encode(base64);
+        const payload = new Uint8Array(4 + mimeBytes.length + base64Bytes.length);
+        payload.set(mimeLenBytes, 0);
+        payload.set(mimeBytes, 4);
+        payload.set(base64Bytes, 4 + mimeBytes.length);
+        
+        const length = payload.length;
+        const crc = crc32(payload);
+        let allBytes = [...intToBytes32(length), ...intToBytes32(length), ...intToBytes32(crc), ...payload];
+        while (allBytes.length % 3 !== 0) allBytes.push(0);
+        
+        const width = 256;
+        const height = Math.ceil(allBytes.length / 3 / width);
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(width, height);
+        const px = imgData.data;
+        let byteIdx = 0;
+        for (let i = 0; i < width * height; i++) {
+          const p = i * 4;
+          px[p]   = allBytes[byteIdx++] || 0;
+          px[p+1] = allBytes[byteIdx++] || 0;
+          px[p+2] = allBytes[byteIdx++] || 0;
+          px[p+3] = 255;
+        }
+        ctx.putImageData(imgData, 0, 0);
+        canvasWrapper.style.display = 'block';
+        imageSizeInfo.textContent = `📏 ${width}×${height} | حجم الصوت: ${formatFileSize(audioBlob.size)}`;
+        showToast('🎨 تم تحويل الصوت إلى صورة!');
+      } catch (e) {
+        showToast('❌ فشل: ' + e.message, false);
+      }
+    }
+
+    function saveImage() {
+      if (!canvas.width) { showToast('لا توجد صورة', false); return; }
+      const a = document.createElement('a');
+      a.download = `ALM_audio_${Date.now()}.png`;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+      showToast('💾 تم حفظ الصورة (أرسلها كمستند للحفاظ على البيانات)');
+    }
+
+    function copyBase64ToClipboard() {
+      if (!lastEncodedBase64) { showToast('لا يوجد نص مشفر، قم بالتحويل أولاً', false); return; }
+      navigator.clipboard?.writeText(lastEncodedBase64).then(() => {
+        showToast('📋 تم نسخ النص المشفر إلى الحافظة');
+      }).catch(() => showToast('تعذر النسخ', false));
+    }
+
+    // ---------- فك التشفير من Base64 (يدوي أو من صورة) ----------
+    function decodeFromBase64(base64, key32) {
+      // فك base64
+      let encryptedBytes;
+      try { encryptedBytes = base64ToUint8Array(base64); } 
+      catch { throw new Error('النص المشفر غير صالح'); }
+      
+      const decrypted = xorBytesWithKey(encryptedBytes, key32);
+      // نفترض mime من النوع المسجل، أو نستخدم webm افتراضي
+      const mime = audioMimeType || 'audio/webm';
+      return new Blob([decrypted], { type: mime });
+    }
+
+    async function decodeImageToAudio(fromImage = true) {
+      const key32 = parseKey32(userKeyInput.value);
+      showToast('🔍 جاري فك التشفير...');
+      
+      try {
+        let base64;
+        if (fromImage) {
+          const file = imageInput.files[0];
+          if (!file) throw new Error('اختر صورة PNG أولاً');
+          const img = await createImageBitmap(file);
+          const c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          const ctx = c.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const data = ctx.getImageData(0,0,c.width,c.height).data;
+          
+          const bytes = [];
+          for (let i=0; i<data.length; i+=4) bytes.push(data[i], data[i+1], data[i+2]);
+          
+          const len1 = bytesToInt32(bytes[0],bytes[1],bytes[2],bytes[3]);
+          const len2 = bytesToInt32(bytes[4],bytes[5],bytes[6],bytes[7]);
+          if (len1 !== len2) throw new Error('رأس الصورة تالف (ربما تم ضغط الصورة)');
+          
+          const crcStored = bytesToInt32(bytes[8],bytes[9],bytes[10],bytes[11]);
+          const payload = bytes.slice(12, 12+len1);
+          if (payload.length < len1) throw new Error('بيانات ناقصة');
+          
+          const crcCalc = crc32(payload);
+          if (crcCalc !== crcStored) throw new Error('CRC غير متطابق – الصورة معدّلة أو مضغوطة');
+          
+          const mimeLen = bytesToInt32(payload[0],payload[1],payload[2],payload[3]);
+          const mimeBytes = payload.slice(4, 4+mimeLen);
+          audioMimeType = new TextDecoder().decode(new Uint8Array(mimeBytes));
+          
+          const base64Bytes = payload.slice(4+mimeLen);
+          base64 = new TextDecoder().decode(new Uint8Array(base64Bytes));
+        } else {
+          base64 = base64PasteArea.value.trim();
+          if (!base64) throw new Error('الصق النص المشفر أولاً');
+        }
+        
+        const audioBlob = decodeFromBase64(base64, key32);
+        restoredAudio.src = URL.createObjectURL(audioBlob);
+        restoredAudio.style.display = 'block';
+        showToast(`🔊 تم استعادة الصوت (${audioMimeType})`, true);
+      } catch (e) {
+        showToast('❌ فشل الاستعادة: ' + e.message, false);
+        console.error(e);
+      }
+    }
+
+    // ربط الأحداث
+    document.getElementById('encodeBtn').onclick = encodeAudioToImage;
+    document.getElementById('decodeBtn').onclick = () => decodeImageToAudio(true);
+    document.getElementById('decodeFromBase64Btn').onclick = () => decodeImageToAudio(false);
+    document.getElementById('saveImageBtn').onclick = saveImage;
+    document.getElementById('copyBase64Btn').onclick = copyBase64ToClipboard;
+    startBtn.onclick = startRecording;
+    stopBtn.onclick = stopRecording;
+
+    showToast('👋 استخدم "نسخ النص المشفر" للمشاركة الآمنة');
+  })();
+</script>
+</body>
+</html>
