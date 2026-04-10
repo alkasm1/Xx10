@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>ALM AudioImage v1.0 – تحويل الصوت إلى صورة</title>
+
+<style>
+body {
+  font-family: "Cairo", sans-serif;
+  background: #ffffff;
+  color: #222;
+  margin: 0;
+  padding: 0;
+}
+header {
+  background: #0BA37F;
+  color: white;
+  padding: 15px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: bold;
+}
+.container {
+  padding: 20px;
+  max-width: 700px;
+  margin: auto;
+}
+button {
+  width: 100%;
+  padding: 14px;
+  margin-top: 10px;
+  background: #0BA37F;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 17px;
+  cursor: pointer;
+}
+button:hover {
+  background: #0a8c6c;
+}
+input[type="file"], input[type="text"] {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 16px;
+}
+#canvasWrapper {
+  margin-top: 20px;
+  text-align: center;
+}
+audio {
+  width: 100%;
+  margin-top: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<header>ALM AudioImage v1.0 – تحويل الصوت إلى صورة</header>
+
+<div class="container">
+
+  <h3>1) مفتاح المستخدم (32‑بت – ثماني خانات هكس)</h3>
+  <input id="userKey" type="text" value="A1B2C3D4" placeholder="مثال: A1B2C3D4">
+
+  <h3>2) تسجيل صوت أو رفع ملف صوت</h3>
+  <button onclick="startRecording()">🎤 بدء التسجيل</button>
+  <button onclick="stopRecording()">⏹ إيقاف التسجيل</button>
+  <audio id="recordedAudio" controls></audio>
+
+  <h4>أو رفع ملف صوت:</h4>
+  <input type="file" id="audioInput" accept="audio/*">
+
+  <h3>3) تحويل الصوت إلى صورة</h3>
+  <button onclick="encodeAudioToImage()">تحويل الصوت إلى صورة</button>
+
+  <div id="canvasWrapper">
+    <canvas id="audioCanvas"></canvas>
+    <button onclick="saveImage()">💾 حفظ الصورة (PNG)</button>
+  </div>
+
+  <hr>
+
+  <h3>4) استعادة الصوت من صورة</h3>
+  <input type="file" id="imageInput" accept="image/png">
+  <button onclick="decodeImageToAudio()">استعادة الصوت</button>
+
+  <audio id="restoredAudio" controls></audio>
+
+</div>
+
+<script>
+<script>
+let mediaRecorder;
+let audioChunks = [];
+let recordedBlob = null;
+
+/* ===================== تسجيل الصوت ===================== */
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = e => {
+      audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+      recordedBlob = new Blob(audioChunks, { type: "audio/webm" });
+      const audioURL = URL.createObjectURL(recordedBlob);
+      document.getElementById("recordedAudio").src = audioURL;
+    };
+
+    mediaRecorder.start();
+    alert("🎤 بدأ التسجيل...");
+  } catch (err) {
+    alert("لا يمكن الوصول للميكروفون.");
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    alert("⏹ تم إيقاف التسجيل.");
+  } else {
+    alert("لا يوجد تسجيل نشط.");
+  }
+}
+</script>
+  /* ===================== تحويل الصوت إلى صورة ===================== */
+
+async function encodeAudioToImage() {
+  const keyHex = document.getElementById("userKey").value;
+  const key32 = parseKey32(keyHex);
+
+  let audioBlob = null;
+
+  // 1) اختيار مصدر الصوت
+  const fileInput = document.getElementById("audioInput").files[0];
+  if (fileInput) {
+    audioBlob = fileInput;
+  } else if (recordedBlob) {
+    audioBlob = recordedBlob;
+  } else {
+    alert("الرجاء تسجيل صوت أو رفع ملف صوت أولاً.");
+    return;
+  }
+
+  // 2) قراءة الصوت كـ ArrayBuffer
+  const arrayBuffer = await audioBlob.arrayBuffer();
+  const audioBytes = new Uint8Array(arrayBuffer);
+
+  // 3) XOR بالمفتاح (تشفير)
+  const encryptedBytes = xorBytesWithKey(Array.from(audioBytes), key32);
+
+  // 4) تحويل البايتات المشفرة إلى Base64
+  let binStr = String.fromCharCode.apply(null, encryptedBytes);
+  let base64 = btoa(binStr);
+
+  // 5) تحويل Base64 إلى بايتات ASCII
+  let base64Bytes = textToBytes(base64);
+
+  // 6) Header + CRC
+  const length = base64Bytes.length;
+  const crc = crc32(base64Bytes);
+
+  const header = intToBytes32(length).concat(intToBytes32(length));
+  const crcBytes = intToBytes32(crc);
+
+  let allBytes = header.concat(crcBytes, base64Bytes);
+
+  // 7) Padding إلى مضاعفات 3
+  while (allBytes.length % 3 !== 0) allBytes.push(0);
+
+  // 8) تحويل البايتات إلى بكسلات
+  const bytesPerPixel = 3;
+  const totalPixels = allBytes.length / bytesPerPixel;
+
+  const width = 256;
+  const height = Math.ceil(totalPixels / width);
+
+  const canvas = document.getElementById("audioCanvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  const imageData = ctx.createImageData(width, height);
+  const px = imageData.data;
+
+  let bi = 0;
+  for (let i = 0; i < totalPixels; i++) {
+    const p = i * 4;
+    px[p]     = allBytes[bi++] || 0;
+    px[p + 1] = allBytes[bi++] || 0;
+    px[p + 2] = allBytes[bi++] || 0;
+    px[p + 3] = 255;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  alert("🎨 تم تحويل الصوت إلى صورة بنجاح!");
+}
+</script>
+/* ===================== حفظ الصورة ===================== */
+
+function saveImage() {
+  const canvas = document.getElementById("audioCanvas");
+
+  if (!canvas.width || !canvas.height) {
+    alert("لا توجد صورة لحفظها.");
+    return;
+  }
+
+  const url = canvas.toDataURL("image/png");
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "alm-audioimage.png";
+  a.click();
+}
+   /* ===================== استعادة الصوت من صورة ===================== */
+
+async function decodeImageToAudio() {
+  const file = document.getElementById("imageInput").files[0];
+  if (!file) {
+    alert("الرجاء اختيار صورة PNG أولاً.");
+    return;
+  }
+
+  const keyHex = document.getElementById("userKey").value;
+  const key32 = parseKey32(keyHex);
+
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.getElementById("audioCanvas");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+    // 1) استخراج البايتات من البكسلات
+    const bytes = [];
+    for (let i = 0; i < data.length; i += 4) {
+      bytes.push(data[i], data[i+1], data[i+2]);
+    }
+
+    // 2) قراءة الطول من الـ Header
+    const len1 = bytesToInt32(bytes[0], bytes[1], bytes[2], bytes[3]);
+    const len2 = bytesToInt32(bytes[4], bytes[5], bytes[6], bytes[7]);
+
+    if (len1 !== len2) {
+      alert("خطأ في الرأس – الصورة تالفة.");
+      return;
+    }
+
+    const length = len1;
+
+    // 3) قراءة CRC
+    const crcStored = bytesToInt32(bytes[8], bytes[9], bytes[10], bytes[11]);
+
+    // 4) استخراج البيانات
+    const payload = bytes.slice(12, 12 + length);
+
+    if (payload.length < length) {
+      alert("البيانات ناقصة.");
+      return;
+    }
+
+    // 5) التحقق من CRC
+    const crcCalc = crc32(payload);
+    if (crcCalc !== crcStored) {
+      alert("CRC غير مطابق – الصورة تالفة أو المفتاح خاطئ.");
+      return;
+    }
+
+    // 6) تحويل البايتات إلى Base64
+    const base64 = bytesToText(payload);
+
+    // 7) Base64 → بايتات مشفرة
+    let binStr;
+    try {
+      binStr = atob(base64);
+    } catch (e) {
+      alert("Base64 غير صالح – ربما المفتاح خاطئ.");
+      return;
+    }
+
+    const encryptedBytes = [];
+    for (let i = 0; i < binStr.length; i++) {
+      encryptedBytes.push(binStr.charCodeAt(i));
+    }
+
+    // 8) إزالة XOR لاستعادة الصوت الأصلي
+    const audioBytes = xorBytesWithKey(encryptedBytes, key32);
+
+    // 9) تحويل البايتات إلى ملف صوت
+    const audioBlob = new Blob([new Uint8Array(audioBytes)], { type: "audio/webm" });
+    const audioURL = URL.createObjectURL(audioBlob);
+
+    // 10) تشغيل الصوت
+    document.getElementById("restoredAudio").src = audioURL;
+
+    alert("🔊 تم استعادة الصوت بنجاح!");
+  };
+
+  img.src = URL.createObjectURL(file);
+} 
+</body>
+</html>
+
+  <!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>ALM AudioImage v1.0 – تحويل الصوت إلى صورة</title>
+
+<style>
+body {
+  font-family: "Cairo", sans-serif;
+  background: #ffffff;
+  color: #222;
+  margin: 0;
+  padding: 0;
+}
+header {
+  background: #0BA37F;
+  color: white;
+  padding: 15px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: bold;
+}
+.container {
+  padding: 20px;
+  max-width: 700px;
+  margin: auto;
+}
+button {
+  width: 100%;
+  padding: 14px;
+  margin-top: 10px;
+  background: #0BA37F;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 17px;
+  cursor: pointer;
+}
+button:hover {
+  background: #0a8c6c;
+}
+input[type="file"], input[type="text"] {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 16px;
+}
+#canvasWrapper {
+  margin-top: 20px;
+  text-align: center;
+}
+audio {
+  width: 100%;
+  margin-top: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<header>ALM AudioImage v1.0 – تحويل الصوت إلى صورة</header>
+
+<div class="container">
+
+  <h3>1) مفتاح المستخدم (32‑بت – ثماني خانات هكس)</h3>
+  <input id="userKey" type="text" value="A1B2C3D4" placeholder="مثال: A1B2C3D4">
+
+  <h3>2) تسجيل صوت أو رفع ملف صوت</h3>
+  <button onclick="startRecording()">🎤 بدء التسجيل</button>
+  <button onclick="stopRecording()">⏹ إيقاف التسجيل</button>
+  <audio id="recordedAudio" controls></audio>
+
+  <h4>أو رفع ملف صوت:</h4>
+  <input type="file" id="audioInput" accept="audio/*">
+
+  <h3>3) تحويل الصوت إلى صورة</h3>
+  <button onclick="encodeAudioToImage()">تحويل الصوت إلى صورة</button>
+
+  <div id="canvasWrapper">
+    <canvas id="audioCanvas"></canvas>
+    <button onclick="saveImage()">💾 حفظ الصورة (PNG)</button>
+  </div>
+
+  <hr>
+
+  <h3>4) استعادة الصوت من صورة</h3>
+  <input type="file" id="imageInput" accept="image/png">
+  <button onclick="decodeImageToAudio()">استعادة الصوت</button>
+
+  <audio id="restoredAudio" controls></audio>
+
+</div>
+
+<script>
+/* ===================== تسجيل الصوت ===================== */
+let mediaRecorder;
+let audioChunks = [];
+let recordedBlob = null;
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = e => {
+      audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+      recordedBlob = new Blob(audioChunks, { type: "audio/webm" });
+      const audioURL = URL.createObjectURL(recordedBlob);
+      document.getElementById("recordedAudio").src = audioURL;
+    };
+
+    mediaRecorder.start();
+    alert("🎤 بدأ التسجيل...");
+  } catch (err) {
+    alert("لا يمكن الوصول للميكروفون.");
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    alert("⏹ تم إيقاف التسجيل.");
+  } else {
+    alert("لا يوجد تسجيل نشط.");
+  }
+}
+
+/* ===================== CRC32 ===================== */
+function crc32(bytes) {
+  let crc = ~0;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
+    }
+  }
+  return (~crc) >>> 0;
+}
+
+/* ===================== UTF-8 ===================== */
+function textToBytes(str) {
+  return Array.from(new TextEncoder().encode(str));
+}
+function bytesToText(bytes) {
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+/* ===================== 32-bit helpers ===================== */
+function intToBytes32(n) {
+  return [
+    (n >>> 24) & 0xFF,
+    (n >>> 16) & 0xFF,
+    (n >>> 8) & 0xFF,
+    n & 0xFF
+  ];
+}
+function bytesToInt32(b0, b1, b2, b3) {
+  return ((b0 << 24) >>> 0) | (b1 << 16) | (b2 << 8) | b3;
+}
+
+/* ===================== Key (32-bit) ===================== */
+function parseKey32(hexStr) {
+  hexStr = hexStr.replace(/[^0-9A-Fa-f]/g, "");
+  if (hexStr.length !== 8) return 0xA1B2C3D4;
+  return parseInt(hexStr, 16) >>> 0;
+}
+
+function xorBytesWithKey(bytes, key32) {
+  const k0 = (key32 >>> 24) & 0xFF;
+  const k1 = (key32 >>> 16) & 0xFF;
+  const k2 = (key32 >>> 8) & 0xFF;
+  const k3 = key32 & 0xFF;
+  const out = [];
+  for (let i = 0; i < bytes.length; i++) {
+    const k = [k0, k1, k2, k3][i % 4];
+    out.push(bytes[i] ^ k);
+  }
+  return out;
+}
+
+/* ===================== تحويل الصوت إلى صورة ===================== */
+async function encodeAudioToImage() {
+  const keyHex = document.getElementById("userKey").value;
+  const key32 = parseKey32(keyHex);
+
+  let audioBlob = null;
+
+  const fileInput = document.getElementById("audioInput").files[0];
+  if (fileInput) {
+    audioBlob = fileInput;
+  } else if (recordedBlob) {
+    audioBlob = recordedBlob;
+  } else {
+    alert("الرجاء تسجيل صوت أو رفع ملف صوت أولاً.");
+    return;
+  }
+
+  const arrayBuffer = await audioBlob.arrayBuffer();
+  const audioBytes = new Uint8Array(arrayBuffer);
+
+  const encryptedBytes = xorBytesWithKey(Array.from(audioBytes), key32);
+
+  let binStr = String.fromCharCode.apply(null, encryptedBytes);
+  let base64 = btoa(binStr);
+
+  let base64Bytes = textToBytes(base64);
+
+  const length = base64Bytes.length;
+  const crc = crc32(base64Bytes);
+
+  const header = intToBytes32(length).concat(intToBytes32(length));
+  const crcBytes = intToBytes32(crc);
+
+  let allBytes = header.concat(crcBytes, base64Bytes);
+
+  while (allBytes.length % 3 !== 0) allBytes.push(0);
+
+  const bytesPerPixel = 3;
+  const totalPixels = allBytes.length / bytesPerPixel;
+
+  const width = 256;
+  const height = Math.ceil(totalPixels / width);
+
+  const canvas = document.getElementById("audioCanvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  const imageData = ctx.createImageData(width, height);
+  const px = imageData.data;
+
+  let bi = 0;
+  for (let i = 0; i < totalPixels; i++) {
+    const p = i * 4;
+    px[p]     = allBytes[bi++] || 0;
+    px[p + 1] = allBytes[bi++] || 0;
+    px[p + 2] = allBytes[bi++] || 0;
+    px[p + 3] = 255;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  alert("🎨 تم تحويل الصوت إلى صورة بنجاح!");
+}
+
+/* ===================== حفظ الصورة ===================== */
+function saveImage() {
+  const canvas = document.getElementById("audioCanvas");
+
+  if (!canvas.width || !canvas.height) {
+    alert("لا توجد صورة لحفظها.");
+    return;
+  }
+
+  const url = canvas.toDataURL("image/png");
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "alm-audioimage.png";
+  a.click();
+}
+
+/* ===================== استعادة الصوت من صورة ===================== */
+async function decodeImageToAudio() {
+  const file = document.getElementById("imageInput").files[0];
+  if (!file) {
+    alert("الرجاء اختيار صورة PNG أولاً.");
+    return;
+  }
+
+  const keyHex = document.getElementById("userKey").value;
+  const key32 = parseKey32(keyHex);
+
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.getElementById("audioCanvas");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+    const bytes = [];
+    for (let i = 0; i < data.length; i += 4) {
+      bytes.push(data[i], data[i+1], data[i+2]);
+    }
+
+    const len1 = bytesToInt32(bytes[0], bytes[1], bytes[2], bytes[3]);
+    const len2 = bytesToInt32(bytes[4], bytes[5], bytes[6], bytes[7]);
+
+    if (len1 !== len2) {
+      alert("خطأ في الرأس – الصورة تالفة.");
+      return;
+    }
+
+    const length = len1;
+
+    const crcStored = bytesToInt32(bytes[8], bytes[9], bytes[10], bytes[11]);
+
+    const payload = bytes.slice(12, 12 + length);
+
+    if (payload.length < length) {
+      alert("البيانات ناقصة.");
+      return;
+    }
+
+    const crcCalc = crc32(payload);
+    if (crcCalc !== crcStored) {
+      alert("CRC غير مطابق – الصورة تالفة أو المفتاح خاطئ.");
+      return;
+    }
+
+    const base64 = bytesToText(payload);
+
+    let binStr;
+    try {
+      binStr = atob(base64);
+    } catch (e) {
+      alert("Base64 غير صالح – ربما المفتاح خاطئ.");
+      return;
+    }
+
+    const encryptedBytes = [];
+    for (let i = 0; i < binStr.length; i++) {
+      encryptedBytes.push(binStr.charCodeAt(i));
+    }
+
+    const audioBytes = xorBytesWithKey(encryptedBytes, key32);
+
+    const audioBlob = new Blob([new Uint8Array(audioBytes)], { type: "audio/webm" });
+    const audioURL = URL.createObjectURL(audioBlob);
+
+    document.getElementById("restoredAudio").src = audioURL;
+
+    alert("🔊 تم استعادة الصوت بنجاح!");
+  };
+
+  img.src = URL.createObjectURL(file);
+}
+</script>
+
+</body>
+</html>    
